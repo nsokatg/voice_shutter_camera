@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>ホイホイカメラ</title>
+    <title>ホイカメラ</title>
     <link rel="apple-touch-icon" href="/voice_shutter_camera/camera.png">
     <style>
         :root {
@@ -386,7 +386,7 @@
 </head>
 <body>
 
-    <h1>ホイホイカメラ</h1>
+    <h1>ホイカメラ</h1>
 
     <div class="container" id="container">
         <div class="video-wrapper" id="videoWrapper">
@@ -474,7 +474,7 @@
         const photoCount = document.getElementById('photoCount');
         const maxCountEl = document.getElementById('maxCount');
 
-        const TRIGGER_WORDS = ['ホイ','シャッター', 'チーズ', '撮って', 'カシャ','パシャ'];
+        const TRIGGER_WORDS = ['ホイ','シャッター', 'チーズ', '撮って', '写真','カシャ','パシャ'];
         const COOLDOWN_MS = 700;       // 連続撮影しやすい短めの間隔
         const MAX_DIGITAL_ZOOM = 4.0;
         const MAX_PHOTOS = 30;         // メモリ保護のための上限枚数
@@ -961,13 +961,39 @@
                 console.warn('Wake Lock取得失敗:', e);
             }
         }
+        // アプリを閉じる／別アプリへ切り替える／画面ロックしたときに音声認識を停止する
+        let stoppedByHide = false;
+
+        function stopListening() {
+            if (!isListening) return false;
+            setStoppedUI(); // 先に isListening を false にして、onend での自動再開を防ぐ
+            try {
+                recognition.abort();
+            } catch (e) {
+                console.warn(e);
+            }
+            return true;
+        }
+
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') requestWakeLock();
+            if (document.visibilityState === 'hidden') {
+                if (stopListening()) stoppedByHide = true;
+            } else {
+                requestWakeLock();
+                if (stoppedByHide) {
+                    stoppedByHide = false;
+                    showToast('音声認識を停止しました。再開は「音声認識開始」を押してください');
+                }
+            }
         });
 
         window.addEventListener('pagehide', () => {
+            stopListening();
             if (stream) stream.getTracks().forEach(t => t.stop());
         });
+
+        // 一部のブラウザでページが凍結される場合にも停止
+        document.addEventListener('freeze', stopListening);
 
         initCamera();
         setupZoom();
