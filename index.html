@@ -2,22 +2,29 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>音声シャッターカメラ</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>VoiceShutterカメラ</title>
     <style>
+        html, body {
+            -webkit-text-size-adjust: 100%;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", Meiryo, Roboto, sans-serif;
             background-color: #121212;
             color: #e0e0e0;
             margin: 0;
-            padding: 20px;
+            padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
             display: flex;
             flex-direction: column;
             align-items: center;
+            touch-action: manipulation;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
         h1 {
-            font-size: 1.4rem;
-            margin-bottom: 10px;
+            font-size: 1.3rem;
+            margin: 0 0 10px;
         }
         .container {
             position: relative;
@@ -28,16 +35,56 @@
             overflow: hidden;
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
         }
-        video, canvas {
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            background: #000;
+            touch-action: none;
+        }
+        video {
             width: 100%;
             display: block;
-            background: #000;
+            transform-origin: center center;
         }
         canvas {
             display: none;
         }
+        .zoom-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background: rgba(0,0,0,0.55);
+            color: #fff;
+            font-size: 0.85rem;
+            pointer-events: none;
+        }
+        .zoom-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            padding: 10px 15px 0;
+        }
+        .zoom-buttons button {
+            min-width: 52px;
+            padding: 6px 12px;
+            font-size: 0.95rem;
+            border: 1px solid #444;
+            border-radius: 18px;
+            background: #2a2a2a;
+            color: #e0e0e0;
+            cursor: pointer;
+        }
+        .zoom-buttons button.on {
+            background: #f5c518;
+            border-color: #f5c518;
+            color: #000;
+            font-weight: bold;
+        }
         .controls {
-            padding: 15px;
+            padding: 12px 15px 15px;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -45,10 +92,10 @@
         }
         .status-bar {
             display: flex;
-            justify-content: space-between;
-            gap: 10px;
+            flex-direction: column;
+            gap: 4px;
             width: 100%;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: #aaa;
         }
         .indicator {
@@ -68,22 +115,17 @@
             background-color: #007acc;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 12px 22px;
             font-size: 1rem;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
             text-decoration: none;
-            transition: background 0.2s;
-        }
-        .btn:hover {
-            background-color: #005999;
         }
         .btn.active {
             background-color: #d32f2f;
         }
         .btn.save {
             background-color: #2e7d32;
-            margin-top: 10px;
         }
         .preview-container {
             margin-top: 20px;
@@ -99,6 +141,20 @@
             border-radius: 8px;
             border: 1px solid #333;
             display: block;
+            -webkit-touch-callout: default;
+            -webkit-user-select: auto;
+            user-select: auto;
+        }
+        .preview-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .preview-info {
+            margin-top: 6px;
+            font-size: 0.8rem;
+            color: #888;
         }
         .flash {
             position: fixed;
@@ -119,12 +175,23 @@
     <h1>音声シャッターカメラ</h1>
 
     <div class="container">
-        <video id="video" autoplay playsinline muted></video>
+        <div class="video-wrapper" id="videoWrapper">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="zoom-badge" id="zoomBadge">×1.0</div>
+        </div>
         <canvas id="canvas"></canvas>
+
+        <div class="zoom-buttons" id="zoomButtons">
+            <button data-zoom="1" class="on">1×</button>
+            <button data-zoom="2">2×</button>
+            <button data-zoom="3">3×</button>
+        </div>
+
         <div class="controls">
             <div class="status-bar">
                 <div><span id="micIndicator" class="indicator"></span>音声認識: <span id="micStatus">停止中</span></div>
-                <div>認識ワード: 「シャッター」「チーズ」「撮って」「写真」</div>
+                <div>認識ワード: 「シャッター」「チーズ」「撮って」「写真」「パシャ」</div>
+                <div>解像度: <span id="resInfo">-</span> ／ ズーム方式: <span id="zoomMode">-</span></div>
             </div>
             <button id="toggleMicBtn" class="btn">音声認識開始</button>
         </div>
@@ -133,68 +200,252 @@
     <div class="preview-container" id="previewArea" style="display: none;">
         <h2>撮影プレビュー</h2>
         <img id="photoPreview" alt="撮影画像">
-        <a id="downloadLink" class="btn save" download="photo.jpg">画像を保存する</a>
+        <div class="preview-info" id="photoInfo"></div>
+        <div class="preview-actions">
+            <button id="shareBtn" class="btn save" style="display:none;">写真に保存／共有</button>
+            <a id="downloadLink" class="btn" download="photo.jpg">ファイルに保存</a>
+        </div>
     </div>
 
     <div id="flash" class="flash"></div>
 
     <script>
         const video = document.getElementById('video');
+        const videoWrapper = document.getElementById('videoWrapper');
         const canvas = document.getElementById('canvas');
         const photoPreview = document.getElementById('photoPreview');
+        const photoInfo = document.getElementById('photoInfo');
         const previewArea = document.getElementById('previewArea');
         const downloadLink = document.getElementById('downloadLink');
+        const shareBtn = document.getElementById('shareBtn');
         const toggleMicBtn = document.getElementById('toggleMicBtn');
         const micStatus = document.getElementById('micStatus');
         const micIndicator = document.getElementById('micIndicator');
         const flash = document.getElementById('flash');
+        const zoomBadge = document.getElementById('zoomBadge');
+        const zoomButtons = document.getElementById('zoomButtons');
+        const resInfo = document.getElementById('resInfo');
+        const zoomMode = document.getElementById('zoomMode');
 
-        // 画面表示と実際のトリガーを同じ配列に統一
-        const TRIGGER_WORDS = ['シャッター', 'チーズ', '撮って', '写真'];
+        const TRIGGER_WORDS = ['シャッター', 'チーズ', '撮って', '写真','パシャ'];
         const COOLDOWN_MS = 2000;
+        const MAX_DIGITAL_ZOOM = 4.0;
 
         let recognition = null;
         let isListening = false;
         let lastShot = 0;
+        let lastFiredIndex = -1;
         let stream = null;
+        let track = null;
+        let wakeLock = null;
+        let lastBlob = null;
+        let lastBlobUrl = null;
 
-        // 1. カメラ起動（外カメラを優先。なければ自動で別のカメラにフォールバック）
+        let nativeZoom = null;
+        let currentZoom = 1.0;
+        let pinchStartDist = null;
+        let pinchStartZoom = 1.0;
+        let nativeApplying = false;
+        let nativePending = null;
+
         async function initCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: { ideal: 'environment' },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
+                        width: { ideal: 3840 },
+                        height: { ideal: 2160 }
                     },
                     audio: false
                 });
                 video.srcObject = stream;
+                track = stream.getVideoTracks()[0];
+                detectNativeZoom();
+                
+                if (video.readyState >= 1) {
+                    updateResolutionInfo();
+                } else {
+                    video.addEventListener('loadedmetadata', updateResolutionInfo);
+                }
             } catch (err) {
                 alert('カメラへのアクセスが拒否されたか、利用できません。');
                 console.error(err);
             }
         }
 
-        // 2. 写真撮影処理
+        function updateResolutionInfo() {
+            resInfo.textContent = `${video.videoWidth}×${video.videoHeight}`;
+        }
+
+        function detectNativeZoom() {
+            try {
+                const caps = track.getCapabilities ? track.getCapabilities() : {};
+                if (caps.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > caps.zoom.min) {
+                    nativeZoom = { min: caps.zoom.min, max: caps.zoom.max };
+                    zoomMode.textContent = 'カメラ光学/ネイティブ';
+                    return;
+                }
+            } catch (e) {
+                console.warn(e);
+            }
+            nativeZoom = null;
+            zoomMode.textContent = 'デジタル';
+        }
+
+        function maxZoom() {
+            return nativeZoom ? nativeZoom.max : MAX_DIGITAL_ZOOM;
+        }
+        function minZoom() {
+            return nativeZoom ? nativeZoom.min : 1.0;
+        }
+
+        function setZoom(z) {
+            z = Math.min(maxZoom(), Math.max(minZoom(), z));
+            currentZoom = z;
+            zoomBadge.textContent = '×' + z.toFixed(1);
+
+            if (nativeZoom) {
+                applyNativeZoom(z);
+            } else {
+                video.style.transform = `scale(${z})`;
+            }
+
+            zoomButtons.querySelectorAll('button').forEach(b => {
+                b.classList.toggle('on', Math.abs(parseFloat(b.dataset.zoom) - z) < 0.05);
+            });
+        }
+
+        async function applyNativeZoom(z) {
+            if (nativeApplying) {
+                nativePending = z;
+                return;
+            }
+            nativeApplying = true;
+            try {
+                await track.applyConstraints({ advanced: [{ zoom: z }] });
+            } catch (e) {
+                console.warn('ネイティブズーム失敗。デジタルズームに切替:', e);
+                nativeZoom = null;
+                zoomMode.textContent = 'デジタル';
+                video.style.transform = `scale(${Math.min(z, MAX_DIGITAL_ZOOM)})`;
+            }
+            nativeApplying = false;
+            if (nativePending !== null && nativeZoom) {
+                const next = nativePending;
+                nativePending = null;
+                applyNativeZoom(next);
+            }
+        }
+
+        function getTouchDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function setupZoom() {
+            videoWrapper.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    pinchStartDist = getTouchDistance(e.touches);
+                    pinchStartZoom = currentZoom;
+                }
+            }, { passive: false });
+
+            videoWrapper.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2 && pinchStartDist) {
+                    e.preventDefault();
+                    const ratio = getTouchDistance(e.touches) / pinchStartDist;
+                    setZoom(pinchStartZoom * ratio);
+                }
+            }, { passive: false });
+
+            const endPinch = (e) => {
+                if (e.touches.length < 2) pinchStartDist = null;
+            };
+            videoWrapper.addEventListener('touchend', endPinch);
+            videoWrapper.addEventListener('touchcancel', endPinch);
+
+            ['gesturestart', 'gesturechange', 'gestureend'].forEach(name => {
+                document.addEventListener(name, (e) => e.preventDefault(), { passive: false });
+            });
+            document.addEventListener('touchmove', (e) => {
+                if (e.touches.length > 1) e.preventDefault();
+            }, { passive: false });
+
+            zoomButtons.addEventListener('click', (e) => {
+                const btn = e.target.closest('button');
+                if (btn) setZoom(parseFloat(btn.dataset.zoom));
+            });
+
+            videoWrapper.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                setZoom(currentZoom + (e.deltaY < 0 ? 0.2 : -0.2));
+            }, { passive: false });
+        }
+
         function takePhoto() {
-            if (!video.videoWidth) return; // カメラ未準備
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            if (!video.videoWidth) return;
+
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-            photoPreview.src = dataUrl;
-            previewArea.style.display = 'block';
-            downloadLink.href = dataUrl;
+            if (!nativeZoom && currentZoom > 1.0) {
+                const cw = Math.round(vw / currentZoom);
+                const ch = Math.round(vh / currentZoom);
+                const cx = Math.round((vw - cw) / 2);
+                const cy = Math.round((vh - ch) / 2);
+                canvas.width = cw;
+                canvas.height = ch;
+                ctx.drawImage(video, cx, cy, cw, ch, 0, 0, cw, ch);
+            } else {
+                canvas.width = vw;
+                canvas.height = vh;
+                ctx.drawImage(video, 0, 0, vw, vh);
+            }
 
-            // シャッター演出（画面を短く白くフラッシュ）
+            canvas.toBlob((blob) => {
+                if (!blob) return;
+                if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
+                lastBlob = blob;
+                lastBlobUrl = URL.createObjectURL(blob);
+
+                photoPreview.src = lastBlobUrl;
+                photoInfo.textContent = `${canvas.width}×${canvas.height}px ／ ${(blob.size / 1024 / 1024).toFixed(1)}MB`;
+                previewArea.style.display = 'block';
+
+                downloadLink.href = lastBlobUrl;
+                downloadLink.download = `photo_${timestamp()}.jpg`;
+            }, 'image/jpeg', 0.95);
+
             flash.classList.add('on');
             setTimeout(() => flash.classList.remove('on'), 100);
         }
 
-        // 音声認識の停止状態をUIに反映
+        function timestamp() {
+            const d = new Date();
+            const p = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+        }
+
+        function setupShare() {
+            if (!navigator.share || !navigator.canShare) return;
+            const testFile = new File([new Blob(['x'], { type: 'image/jpeg' })], 'test.jpg', { type: 'image/jpeg' });
+            if (!navigator.canShare({ files: [testFile] })) return;
+
+            shareBtn.style.display = 'inline-block';
+            shareBtn.addEventListener('click', async () => {
+                if (!lastBlob) return;
+                const file = new File([lastBlob], `photo_${timestamp()}.jpg`, { type: 'image/jpeg' });
+                try {
+                    await navigator.share({ files: [file] });
+                } catch (e) {
+                    if (e.name !== 'AbortError') console.error(e);
+                }
+            });
+        }
+
         function setStoppedUI() {
             isListening = false;
             micStatus.textContent = '停止中';
@@ -203,11 +454,10 @@
             toggleMicBtn.classList.remove('active');
         }
 
-        // 3. 音声認識の設定 (Web Speech API)
         function setupSpeechRecognition() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
-                alert('お使いのブラウザは音声認識に対応していません（Google Chromeなどを推奨します）。');
+                alert('お使いのブラウザは音声認識に対応していません。');
                 toggleMicBtn.style.display = 'none';
                 return;
             }
@@ -215,32 +465,37 @@
             recognition = new SpeechRecognition();
             recognition.lang = 'ja-JP';
             recognition.continuous = true;
-            recognition.interimResults = false;
+            recognition.interimResults = true;
+
+            recognition.onstart = () => {
+                lastFiredIndex = -1;
+            };
 
             recognition.onresult = (event) => {
-                const last = event.results.length - 1;
-                const transcript = event.results[last][0].transcript.trim();
-                console.log('認識ワード:', transcript);
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript.trim();
+                    console.log('認識ワード:', transcript);
 
-                const now = Date.now();
-                // キーワード一致 かつ クールダウン経過後のみ撮影
-                if (TRIGGER_WORDS.some(word => transcript.includes(word)) && now - lastShot > COOLDOWN_MS) {
-                    lastShot = now;
-                    takePhoto();
+                    if (i === lastFiredIndex) continue;
+
+                    const now = Date.now();
+                    if (TRIGGER_WORDS.some(word => transcript.includes(word)) && now - lastShot > COOLDOWN_MS) {
+                        lastShot = now;
+                        lastFiredIndex = i;
+                        takePhoto();
+                    }
                 }
             };
 
             recognition.onerror = (event) => {
                 console.error('音声認識エラー:', event.error);
-                // 許可拒否など、再試行しても無駄なエラーでは停止状態に戻す
                 if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                     setStoppedUI();
-                    alert('マイクの使用が許可されていません。ブラウザの設定を確認してください。');
+                    alert('マイクまたは音声認識の使用が許可されていません。\n設定アプリでSafariのマイク許可と、「設定 > 一般 > キーボード > 音声入力」がオンか確認してください。');
                 }
             };
 
             recognition.onend = () => {
-                // 意図せず停止した場合のみ再開（許可拒否時は isListening が false なので再開しない）
                 if (isListening) {
                     setTimeout(() => {
                         if (!isListening) return;
@@ -254,7 +509,6 @@
             };
         }
 
-        // 音声認識のトグルボタン
         toggleMicBtn.addEventListener('click', () => {
             if (!recognition) return;
 
@@ -275,14 +529,28 @@
             }
         });
 
-        // ページを離れるときにカメラを解放
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (e) {
+                console.warn('Wake Lock取得失敗:', e);
+            }
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') requestWakeLock();
+        });
+
         window.addEventListener('pagehide', () => {
             if (stream) stream.getTracks().forEach(t => t.stop());
         });
 
-        // 初期化実行
         initCamera();
+        setupZoom();
+        setupShare();
         setupSpeechRecognition();
+        requestWakeLock();
     </script>
 </body>
 </html>
