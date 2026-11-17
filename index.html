@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>チーズカメラ</title>
+    <title>ホイホイカメラ</title>
     <link rel="apple-touch-icon" href="/voice_shutter_camera/camera.png">
     <style>
         :root {
-            --panel-w: 170px; /* 横画面時の操作パネル幅 */
+            --panel-w: 200px; /* 横画面時の操作パネル幅 */
         }
         * {
             box-sizing: border-box;
@@ -40,7 +40,7 @@
         }
         h1 {
             font-size: 1.1rem;
-            margin: 0 0 6px;
+            margin: 0 0 4px;
         }
         .container {
             position: relative;
@@ -98,12 +98,12 @@
             display: flex;
             gap: 6px;
             justify-content: center;
-            padding: 6px 10px 0;
+            padding: 4px 10px 0;
         }
         .zoom-buttons button {
-            min-width: 42px;
-            padding: 4px 10px;
-            font-size: 0.85rem;
+            min-width: 44px;
+            padding: 3px 8px;
+            font-size: 0.8rem;
             border: 1px solid #444;
             border-radius: 14px;
             background: #2a2a2a;
@@ -115,6 +115,51 @@
             border-color: #f5c518;
             color: #000;
             font-weight: bold;
+        }
+        /* 撮影した写真を並べるトレイ（軽量サムネイルのみ表示） */
+        .gallery-tray {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding: 6px 10px;
+            margin-top: 6px;
+            background: #161616;
+            min-height: 54px;
+            align-items: center;
+            border-top: 1px solid #333;
+            border-bottom: 1px solid #333;
+        }
+        .thumbnail-item {
+            position: relative;
+            flex-shrink: 0;
+            width: 40px;
+            height: 40px;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid #555;
+            cursor: pointer;
+        }
+        .thumbnail-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .thumbnail-item .num-badge {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            font-size: 0.6rem;
+            padding: 0 3px;
+            line-height: 1.3;
+        }
+        .gallery-empty {
+            color: #666;
+            font-size: 0.75rem;
+            width: 100%;
+            text-align: center;
         }
         .controls {
             padding: 8px 12px 10px;
@@ -144,18 +189,23 @@
             background-color: #4caf50;
             box-shadow: 0 0 6px #4caf50;
         }
+        .btn-group {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+        }
         .btn {
             display: inline-block;
             background-color: #007acc;
             color: white;
             border: none;
-            padding: 8px 16px;
+            padding: 8px 12px;
             font-size: 0.9rem;
             border-radius: 6px;
             cursor: pointer;
             text-decoration: none;
-            width: 100%;
             text-align: center;
+            flex: 1;
         }
         .btn.active {
             background-color: #d32f2f;
@@ -163,16 +213,29 @@
         .btn.save {
             background-color: #2e7d32;
         }
-        .btn.gray {
-            background: #555;
+        .btn.danger {
+            background-color: #d32f2f;
         }
-        /* 撮影プレビュー（モーダル） */
+        .btn.gray {
+            background-color: #555;
+        }
+        .btn.disabled {
+            background-color: #444;
+            color: #888;
+            pointer-events: none;
+        }
+
+        /* 写真確認・保存モーダル */
         .preview-container {
             position: fixed;
             inset: 0;
             background: rgba(18,18,18,0.96);
             z-index: 100;
-            padding: max(env(safe-area-inset-top, 0px), 12px) max(env(safe-area-inset-right, 0px), 16px) max(env(safe-area-inset-bottom, 0px), 12px) max(env(safe-area-inset-left, 0px), 16px);
+            padding:
+                max(env(safe-area-inset-top, 0px), 12px)
+                max(env(safe-area-inset-right, 0px), 16px)
+                max(env(safe-area-inset-bottom, 0px), 12px)
+                max(env(safe-area-inset-left, 0px), 16px);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -190,16 +253,13 @@
             font-size: 1rem;
             margin: 0 0 6px;
         }
-        #photoPreview {
+        #modalImage {
             max-width: 100%;
-            max-height: 55vh;
-            max-height: 55dvh;
+            max-height: 50vh;
+            max-height: 50dvh;
             border-radius: 8px;
             border: 1px solid #333;
             display: block;
-            -webkit-touch-callout: default;
-            -webkit-user-select: auto;
-            user-select: auto;
         }
         .preview-info {
             margin-top: 4px;
@@ -209,10 +269,19 @@
         .preview-side {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
             width: 100%;
             max-width: 320px;
         }
+        .preview-side .btn {
+            flex: none;
+            width: 100%;
+        }
+        .preview-side .btn-group .btn {
+            flex: 1;
+            width: auto;
+        }
+
         .flash {
             position: fixed;
             inset: 0;
@@ -220,10 +289,30 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.15s;
+            z-index: 150;
         }
         .flash.on {
             opacity: 0.7;
             transition: none;
+        }
+        .toast {
+            position: fixed;
+            top: calc(env(safe-area-inset-top, 0px) + 10px);
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 90vw;
+            padding: 8px 14px;
+            border-radius: 18px;
+            background: rgba(0,0,0,0.85);
+            color: #fff;
+            font-size: 0.8rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 200;
+        }
+        .toast.on {
+            opacity: 1;
         }
 
         /* ===== 横画面レイアウト：左に映像、右に操作パネル ===== */
@@ -248,41 +337,56 @@
                 overflow-y: auto;
             }
             .zoom-buttons {
-                padding: 6px 8px 0;
+                padding: 4px 8px 0;
             }
             .zoom-buttons button {
                 min-width: 40px;
-                padding: 4px 8px;
+                padding: 3px 8px;
+            }
+            .gallery-tray {
+                flex-wrap: wrap;
+                overflow-x: hidden;
+                overflow-y: auto;
+                max-height: 100px;
+                padding: 6px 8px;
             }
             .controls {
-                padding: 8px 10px;
+                padding: 6px 8px 8px;
             }
             .status-bar {
                 flex-direction: column;
+            }
+            .controls .btn-group {
+                flex-direction: column;
+            }
+            .controls .btn {
+                flex: none;
+                width: 100%;
+                padding: 7px 10px;
             }
 
             .preview-container {
                 flex-direction: row;
                 gap: 16px;
             }
-            #photoPreview {
+            #modalImage {
                 max-height: calc(100vh - 60px);
                 max-height: calc(100dvh - 60px);
-                max-width: calc(100vw - 280px);
+                max-width: calc(100vw - 290px);
             }
             .preview-main h2 {
                 display: none;
             }
             .preview-side {
-                width: 200px;
-                flex: 0 0 200px;
+                width: 210px;
+                flex: 0 0 210px;
             }
         }
     </style>
 </head>
 <body>
 
-    <h1>チーズカメラ</h1>
+    <h1>ホイホイカメラ</h1>
 
     <div class="container" id="container">
         <div class="video-wrapper" id="videoWrapper">
@@ -300,67 +404,95 @@
                 <button data-zoom="3">3×</button>
             </div>
 
+            <!-- 撮影した写真のサムネイル一覧トレイ -->
+            <div class="gallery-tray" id="galleryTray">
+                <div class="gallery-empty" id="galleryEmpty">まだ写真がありません（「シャッター」と発声して連写）</div>
+            </div>
+
             <div class="controls">
                 <div class="status-bar">
                     <div><span id="micIndicator" class="indicator"></span>音声: <span id="micStatus">停止中</span></div>
-                    <div>解像度: <span id="resInfo">-</span></div>
+                    <div>撮影: <span id="photoCount">0</span>/<span id="maxCount">30</span>枚</div>
                     <div>ズーム: <span id="zoomMode">-</span></div>
                 </div>
-                <button id="toggleMicBtn" class="btn">音声認識開始</button>
+                <div class="btn-group">
+                    <button id="toggleMicBtn" class="btn">音声認識開始</button>
+                    <button id="openReviewBtn" class="btn save disabled" onclick="openReview()">確認・保存へ</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- 撮影プレビュー（モーダル） -->
+    <!-- 写真確認・保存モーダル -->
     <div class="preview-container" id="previewArea" style="display: none;">
         <div class="preview-main">
-            <h2>撮影プレビュー</h2>
-            <img id="photoPreview" alt="撮影画像">
-            <div class="preview-info" id="photoInfo"></div>
+            <h2>撮影写真の確認 (<span id="modalCounter">1/1</span>)</h2>
+            <img id="modalImage" alt="撮影画像">
+            <div class="preview-info" id="modalInfo"></div>
         </div>
         <div class="preview-side">
-            <button id="shareBtn" class="btn save" style="display:none;">共有/保存</button>
-            <a id="downloadLink" class="btn" download="photo.jpg">ファイル保存</a>
-            <button class="btn gray" onclick="closePreview()">閉じる（戻る）</button>
+            <button id="shareAllBtn" class="btn save" style="display:none;">全て共有/保存</button>
+            <a id="downloadLink" class="btn" download="photo.jpg">この1枚をファイル保存</a>
+            <div class="btn-group">
+                <button class="btn gray" onclick="prevPhoto()">◀ 前へ</button>
+                <button class="btn gray" onclick="nextPhoto()">次へ ▶</button>
+            </div>
+            <div class="btn-group">
+                <button class="btn danger" onclick="deleteCurrentPhoto()">この1枚を削除</button>
+                <button class="btn danger" onclick="deleteAllPhotos()">全て削除</button>
+            </div>
+            <button class="btn gray" onclick="closeReview()">撮影に戻る</button>
         </div>
     </div>
 
     <div id="flash" class="flash"></div>
+    <div id="toast" class="toast"></div>
 
     <script>
         const video = document.getElementById('video');
         const videoWrapper = document.getElementById('videoWrapper');
         const videoClip = document.getElementById('videoClip');
-        const container = document.getElementById('container');
         const panel = document.getElementById('panel');
         const canvas = document.getElementById('canvas');
-        const photoPreview = document.getElementById('photoPreview');
-        const photoInfo = document.getElementById('photoInfo');
         const previewArea = document.getElementById('previewArea');
+        const modalImage = document.getElementById('modalImage');
+        const modalInfo = document.getElementById('modalInfo');
+        const modalCounter = document.getElementById('modalCounter');
         const downloadLink = document.getElementById('downloadLink');
-        const shareBtn = document.getElementById('shareBtn');
+        const shareAllBtn = document.getElementById('shareAllBtn');
         const toggleMicBtn = document.getElementById('toggleMicBtn');
+        const openReviewBtn = document.getElementById('openReviewBtn');
         const micStatus = document.getElementById('micStatus');
         const micIndicator = document.getElementById('micIndicator');
         const flash = document.getElementById('flash');
+        const toast = document.getElementById('toast');
         const zoomBadge = document.getElementById('zoomBadge');
         const zoomButtons = document.getElementById('zoomButtons');
-        const resInfo = document.getElementById('resInfo');
         const zoomMode = document.getElementById('zoomMode');
+        const galleryTray = document.getElementById('galleryTray');
+        const galleryEmpty = document.getElementById('galleryEmpty');
+        const photoCount = document.getElementById('photoCount');
+        const maxCountEl = document.getElementById('maxCount');
 
-        const TRIGGER_WORDS = ['シャッター', 'チーズ', '撮って', 'パシャ','カシャ'];
-        const COOLDOWN_MS = 2000;
+        const TRIGGER_WORDS = ['ホイ','シャッター', 'チーズ', '撮って', 'カシャ','パシャ'];
+        const COOLDOWN_MS = 700;       // 連続撮影しやすい短めの間隔
         const MAX_DIGITAL_ZOOM = 4.0;
+        const MAX_PHOTOS = 30;         // メモリ保護のための上限枚数
+        const THUMB_MAX_SIDE = 120;    // サムネイルの長辺(px)
 
         let recognition = null;
         let isListening = false;
         let lastShot = 0;
-        let lastFiredIndex = -1;
+        let firedCounts = {};          // 認識結果ごとに「撮影済みのキーワード数」を記録
         let stream = null;
         let track = null;
         let wakeLock = null;
-        let lastBlob = null;
-        let lastBlobUrl = null;
+        let toastTimer = null;
+        let photoSeq = 0;
+
+        // 撮影した写真（blob=原寸、thumbUrl=軽量サムネイル）
+        let capturedPhotos = [];
+        let currentModalIndex = 0;
 
         let nativeZoom = null;
         let currentZoom = 1.0;
@@ -368,6 +500,15 @@
         let pinchStartZoom = 1.0;
         let nativeApplying = false;
         let nativePending = null;
+
+        maxCountEl.textContent = MAX_PHOTOS;
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.add('on');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('on'), 2500);
+        }
 
         // 映像全体が（縦画面でも横画面でも）切れずに収まるよう、枠のサイズを計算する
         function fitVideo() {
@@ -384,7 +525,7 @@
 
             let availW, availH;
             if (isLandscape) {
-                const panelW = panel.getBoundingClientRect().width || 170;
+                const panelW = panel.getBoundingClientRect().width || 200;
                 availW = viewW - padX - panelW;
                 availH = viewH - padY;
             } else {
@@ -393,16 +534,9 @@
             }
 
             const s = Math.min(availW / vw, availH / vh);
-            const w = Math.max(1, Math.floor(vw * s));
-            const h = Math.max(1, Math.floor(vh * s));
-            videoClip.style.width = w + 'px';
-            videoClip.style.height = h + 'px';
+            videoClip.style.width = Math.max(1, Math.floor(vw * s)) + 'px';
+            videoClip.style.height = Math.max(1, Math.floor(vh * s)) + 'px';
             videoClip.style.aspectRatio = 'auto';
-        }
-
-        function onVideoSize() {
-            updateResolutionInfo();
-            fitVideo();
         }
 
         async function initCamera() {
@@ -419,17 +553,13 @@
                 track = stream.getVideoTracks()[0];
                 detectNativeZoom();
 
-                video.addEventListener('loadedmetadata', onVideoSize);
-                video.addEventListener('resize', onVideoSize); // 画面回転で映像サイズが変わったとき
-                if (video.readyState >= 1) onVideoSize();
+                video.addEventListener('loadedmetadata', fitVideo);
+                video.addEventListener('resize', fitVideo); // 画面回転で映像サイズが変わったとき
+                if (video.readyState >= 1) fitVideo();
             } catch (err) {
                 alert('カメラへのアクセスが拒否されたか、利用できません。');
                 console.error(err);
             }
-        }
-
-        function updateResolutionInfo() {
-            resInfo.textContent = `${video.videoWidth}×${video.videoHeight}`;
         }
 
         function detectNativeZoom() {
@@ -546,8 +676,23 @@
             });
         }
 
+        // 軽量サムネイル（dataURL）を作る
+        function makeThumb(srcCanvas) {
+            const s = Math.min(1, THUMB_MAX_SIDE / Math.max(srcCanvas.width, srcCanvas.height));
+            const t = document.createElement('canvas');
+            t.width = Math.max(1, Math.round(srcCanvas.width * s));
+            t.height = Math.max(1, Math.round(srcCanvas.height * s));
+            t.getContext('2d').drawImage(srcCanvas, 0, 0, t.width, t.height);
+            return t.toDataURL('image/jpeg', 0.7);
+        }
+
+        // 連続撮影：プレビューは出さず、配列に溜める
         function takePhoto() {
             if (!video.videoWidth) return;
+            if (capturedPhotos.length >= MAX_PHOTOS) {
+                showToast(`上限${MAX_PHOTOS}枚に達しました。保存してから削除してください`);
+                return;
+            }
 
             const vw = video.videoWidth;
             const vh = video.videoHeight;
@@ -567,26 +712,113 @@
                 ctx.drawImage(video, 0, 0, vw, vh);
             }
 
+            // canvasが次の撮影で書き換わる前に、サイズとサムネイルを確定させる
+            const width = canvas.width;
+            const height = canvas.height;
+            const thumbUrl = makeThumb(canvas);
+            const filename = `photo_${timestamp()}_${String(++photoSeq).padStart(3, '0')}.jpg`;
+
             canvas.toBlob((blob) => {
                 if (!blob) return;
-                if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
-                lastBlob = blob;
-                lastBlobUrl = URL.createObjectURL(blob);
-
-                photoPreview.src = lastBlobUrl;
-                photoInfo.textContent = `${canvas.width}×${canvas.height}px ／ ${(blob.size / 1024 / 1024).toFixed(1)}MB`;
-                previewArea.style.display = 'flex';
-
-                downloadLink.href = lastBlobUrl;
-                downloadLink.download = `photo_${timestamp()}.jpg`;
+                capturedPhotos.push({
+                    blob: blob,
+                    url: URL.createObjectURL(blob),
+                    thumbUrl: thumbUrl,
+                    width: width,
+                    height: height,
+                    filename: filename
+                });
+                updateGalleryUI();
             }, 'image/jpeg', 0.95);
 
             flash.classList.add('on');
             setTimeout(() => flash.classList.remove('on'), 100);
         }
 
-        function closePreview() {
+        // サムネイル一覧とカウンタの更新
+        function updateGalleryUI() {
+            const n = capturedPhotos.length;
+            photoCount.textContent = n;
+            shareAllBtn.textContent = `全${n}枚を共有/保存`;
+            galleryEmpty.style.display = n > 0 ? 'none' : 'block';
+            openReviewBtn.classList.toggle('disabled', n === 0);
+
+            galleryTray.querySelectorAll('.thumbnail-item').forEach(item => item.remove());
+
+            capturedPhotos.forEach((photo, idx) => {
+                const thumb = document.createElement('div');
+                thumb.className = 'thumbnail-item';
+
+                const img = document.createElement('img');
+                img.src = photo.thumbUrl;
+                img.alt = '';
+                const badge = document.createElement('div');
+                badge.className = 'num-badge';
+                badge.textContent = idx + 1;
+
+                thumb.appendChild(img);
+                thumb.appendChild(badge);
+                thumb.addEventListener('click', () => openReview(idx));
+                galleryTray.appendChild(thumb);
+            });
+            galleryTray.scrollLeft = galleryTray.scrollWidth;
+            galleryTray.scrollTop = galleryTray.scrollHeight;
+        }
+
+        function openReview(index = 0) {
+            if (capturedPhotos.length === 0) return;
+            currentModalIndex = index;
+            showModalPhoto();
+            previewArea.style.display = 'flex';
+        }
+
+        function closeReview() {
             previewArea.style.display = 'none';
+            modalImage.removeAttribute('src'); // 原寸画像のデコードメモリを解放
+        }
+
+        function showModalPhoto() {
+            const photo = capturedPhotos[currentModalIndex];
+            modalImage.src = photo.url;
+            modalInfo.textContent = `${photo.width}×${photo.height}px ／ ${(photo.blob.size / 1024 / 1024).toFixed(1)}MB`;
+            modalCounter.textContent = `${currentModalIndex + 1} / ${capturedPhotos.length}`;
+            downloadLink.href = photo.url;
+            downloadLink.download = photo.filename;
+        }
+
+        function nextPhoto() {
+            if (capturedPhotos.length === 0) return;
+            currentModalIndex = (currentModalIndex + 1) % capturedPhotos.length;
+            showModalPhoto();
+        }
+
+        function prevPhoto() {
+            if (capturedPhotos.length === 0) return;
+            currentModalIndex = (currentModalIndex - 1 + capturedPhotos.length) % capturedPhotos.length;
+            showModalPhoto();
+        }
+
+        function deleteCurrentPhoto() {
+            if (capturedPhotos.length === 0) return;
+            URL.revokeObjectURL(capturedPhotos[currentModalIndex].url);
+            capturedPhotos.splice(currentModalIndex, 1);
+            updateGalleryUI();
+
+            if (capturedPhotos.length === 0) {
+                closeReview();
+            } else {
+                currentModalIndex = Math.min(currentModalIndex, capturedPhotos.length - 1);
+                showModalPhoto();
+            }
+        }
+
+        function deleteAllPhotos() {
+            if (capturedPhotos.length === 0) return;
+            if (!confirm(`撮影した${capturedPhotos.length}枚をすべて削除します。保存済みですか？`)) return;
+            capturedPhotos.forEach(p => URL.revokeObjectURL(p.url));
+            capturedPhotos = [];
+            updateGalleryUI();
+            closeReview();
         }
 
         function timestamp() {
@@ -595,17 +827,22 @@
             return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
         }
 
+        // 全写真をまとめて共有シートへ（「○枚の画像を保存」で写真アプリに入る）
         function setupShare() {
             if (!navigator.share || !navigator.canShare) return;
             const testFile = new File([new Blob(['x'], { type: 'image/jpeg' })], 'test.jpg', { type: 'image/jpeg' });
             if (!navigator.canShare({ files: [testFile] })) return;
 
-            shareBtn.style.display = 'inline-block';
-            shareBtn.addEventListener('click', async () => {
-                if (!lastBlob) return;
-                const file = new File([lastBlob], `photo_${timestamp()}.jpg`, { type: 'image/jpeg' });
+            shareAllBtn.style.display = 'block';
+            shareAllBtn.addEventListener('click', async () => {
+                if (capturedPhotos.length === 0) return;
+                const files = capturedPhotos.map(p => new File([p.blob], p.filename, { type: 'image/jpeg' }));
+                if (!navigator.canShare({ files })) {
+                    alert('この枚数は一度に共有できません。「この1枚をファイル保存」を使うか、削除して枚数を減らしてください。');
+                    return;
+                }
                 try {
-                    await navigator.share({ files: [file] });
+                    await navigator.share({ files });
                 } catch (e) {
                     if (e.name !== 'AbortError') console.error(e);
                 }
@@ -618,6 +855,19 @@
             micIndicator.classList.remove('active');
             toggleMicBtn.textContent = '音声認識開始';
             toggleMicBtn.classList.remove('active');
+        }
+
+        // 発話中のトリガーワードの数を数える（「シャッター シャッター」で2と数える）
+        function countTriggers(text) {
+            let n = 0;
+            for (const w of TRIGGER_WORDS) {
+                let idx = 0;
+                while ((idx = text.indexOf(w, idx)) !== -1) {
+                    n++;
+                    idx += w.length;
+                }
+            }
+            return n;
         }
 
         function setupSpeechRecognition() {
@@ -634,21 +884,28 @@
             recognition.interimResults = true;
 
             recognition.onstart = () => {
-                lastFiredIndex = -1;
+                firedCounts = {};
             };
 
             recognition.onresult = (event) => {
+                // 確認画面を開いている間は撮影しない
+                const reviewing = previewArea.style.display !== 'none';
+
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     const transcript = event.results[i][0].transcript.trim();
                     console.log('認識ワード:', transcript);
 
-                    if (i === lastFiredIndex) continue;
+                    const count = countTriggers(transcript);
+                    const fired = firedCounts[i] || 0;
 
-                    const now = Date.now();
-                    if (TRIGGER_WORDS.some(word => transcript.includes(word)) && now - lastShot > COOLDOWN_MS) {
-                        lastShot = now;
-                        lastFiredIndex = i;
-                        takePhoto();
+                    // 同じ発話内でキーワードが増えたときだけ新しい撮影として扱う
+                    if (count > fired) {
+                        firedCounts[i] = count;
+                        const now = Date.now();
+                        if (!reviewing && now - lastShot > COOLDOWN_MS) {
+                            lastShot = now;
+                            takePhoto();
+                        }
                     }
                 }
             };
