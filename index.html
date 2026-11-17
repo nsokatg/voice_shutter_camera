@@ -3,47 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>VoiceShutterカメラ</title>
+    <title>音声シャッターカメラ</title>
     <style>
         html, body {
             -webkit-text-size-adjust: 100%;
+            height: 100%;
+            overflow: hidden; /* 画面全体がスクロールしないように固定 */
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", Meiryo, Roboto, sans-serif;
             background-color: #121212;
             color: #e0e0e0;
             margin: 0;
-            padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+            padding: env(safe-area-inset-top, 8px) 12px env(safe-area-inset-bottom, 8px) 12px;
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center; /* 縦方向中央にコンパクトに収める */
             touch-action: manipulation;
             -webkit-user-select: none;
             user-select: none;
             -webkit-touch-callout: none;
         }
         h1 {
-            font-size: 1.3rem;
-            margin: 0 0 10px;
+            font-size: 1.1rem;
+            margin: 0 0 6px;
         }
         .container {
             position: relative;
             width: 100%;
             max-width: 640px;
             background: #1e1e1e;
-            border-radius: 12px;
+            border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
         }
         .video-wrapper {
             position: relative;
             width: 100%;
+            max-height: 45vh; /* SEなどの縦長画面でもビデオがボタンを圧迫しないよう最大高さを制限 */
             overflow: hidden;
             background: #000;
             touch-action: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
         video {
             width: 100%;
+            height: 100%;
+            object-fit: cover;
             display: block;
             transform-origin: center center;
         }
@@ -52,27 +63,27 @@
         }
         .zoom-badge {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            padding: 3px 10px;
-            border-radius: 12px;
-            background: rgba(0,0,0,0.55);
+            top: 8px;
+            left: 8px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.6);
             color: #fff;
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             pointer-events: none;
         }
         .zoom-buttons {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             justify-content: center;
-            padding: 10px 15px 0;
+            padding: 6px 10px 0;
         }
         .zoom-buttons button {
-            min-width: 52px;
-            padding: 6px 12px;
-            font-size: 0.95rem;
+            min-width: 44px;
+            padding: 4px 10px;
+            font-size: 0.85rem;
             border: 1px solid #444;
-            border-radius: 18px;
+            border-radius: 14px;
             background: #2a2a2a;
             color: #e0e0e0;
             cursor: pointer;
@@ -84,42 +95,45 @@
             font-weight: bold;
         }
         .controls {
-            padding: 12px 15px 15px;
+            padding: 8px 12px 10px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 6px;
             align-items: center;
         }
         .status-bar {
             display: flex;
-            flex-direction: column;
+            flex-wrap: wrap;
+            justify-content: space-between;
             gap: 4px;
             width: 100%;
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             color: #aaa;
         }
         .indicator {
             display: inline-block;
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background-color: #555;
-            margin-right: 5px;
+            margin-right: 4px;
         }
         .indicator.active {
             background-color: #4caf50;
-            box-shadow: 0 0 8px #4caf50;
+            box-shadow: 0 0 6px #4caf50;
         }
         .btn {
             display: inline-block;
             background-color: #007acc;
             color: white;
             border: none;
-            padding: 12px 22px;
-            font-size: 1rem;
-            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            border-radius: 6px;
             cursor: pointer;
             text-decoration: none;
+            width: 100%;
+            text-align: center;
         }
         .btn.active {
             background-color: #d32f2f;
@@ -128,16 +142,24 @@
             background-color: #2e7d32;
         }
         .preview-container {
-            margin-top: 20px;
-            width: 100%;
-            max-width: 640px;
+            position: fixed;
+            inset: 0;
+            background: rgba(18,18,18,0.95);
+            z-index: 100;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow-y: auto;
         }
         .preview-container h2 {
-            font-size: 1.1rem;
-            margin-bottom: 8px;
+            font-size: 1rem;
+            margin-bottom: 6px;
         }
         #photoPreview {
-            width: 100%;
+            max-width: 100%;
+            max-height: 55vh;
             border-radius: 8px;
             border: 1px solid #333;
             display: block;
@@ -147,13 +169,14 @@
         }
         .preview-actions {
             display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
+            gap: 8px;
+            width: 100%;
+            max-width: 320px;
             margin-top: 10px;
         }
         .preview-info {
-            margin-top: 6px;
-            font-size: 0.8rem;
+            margin-top: 4px;
+            font-size: 0.75rem;
             color: #888;
         }
         .flash {
@@ -189,22 +212,24 @@
 
         <div class="controls">
             <div class="status-bar">
-                <div><span id="micIndicator" class="indicator"></span>音声認識: <span id="micStatus">停止中</span></div>
-                <div>認識ワード: 「シャッター」「チーズ」「撮って」「写真」「パシャ」</div>
-                <div>解像度: <span id="resInfo">-</span> ／ ズーム方式: <span id="zoomMode">-</span></div>
+                <div><span id="micIndicator" class="indicator"></span>音声: <span id="micStatus">停止中</span></div>
+                <div>解像度: <span id="resInfo">-</span></div>
+                <div>ズーム: <span id="zoomMode">-</span></div>
             </div>
             <button id="toggleMicBtn" class="btn">音声認識開始</button>
         </div>
     </div>
 
+    <!-- 撮影プレビュー（モーダル表示にして画面内に確実に収まるように修正） -->
     <div class="preview-container" id="previewArea" style="display: none;">
         <h2>撮影プレビュー</h2>
         <img id="photoPreview" alt="撮影画像">
         <div class="preview-info" id="photoInfo"></div>
         <div class="preview-actions">
-            <button id="shareBtn" class="btn save" style="display:none;">写真に保存／共有</button>
-            <a id="downloadLink" class="btn" download="photo.jpg">ファイルに保存</a>
+            <button id="shareBtn" class="btn save" style="display:none;">共有/保存</button>
+            <a id="downloadLink" class="btn" download="photo.jpg">ファイル保存</a>
         </div>
+        <button class="btn" style="background: #555; margin-top: 10px; max-width: 320px;" onclick="closePreview()">閉じる（戻る）</button>
     </div>
 
     <div id="flash" class="flash"></div>
@@ -227,7 +252,7 @@
         const resInfo = document.getElementById('resInfo');
         const zoomMode = document.getElementById('zoomMode');
 
-        const TRIGGER_WORDS = ['シャッター', 'チーズ', '撮って', '写真','パシャ'];
+        const TRIGGER_WORDS = ['シャッター', 'チーズ', '撮って', '写真'];
         const COOLDOWN_MS = 2000;
         const MAX_DIGITAL_ZOOM = 4.0;
 
@@ -282,7 +307,7 @@
                 const caps = track.getCapabilities ? track.getCapabilities() : {};
                 if (caps.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > caps.zoom.min) {
                     nativeZoom = { min: caps.zoom.min, max: caps.zoom.max };
-                    zoomMode.textContent = 'カメラ光学/ネイティブ';
+                    zoomMode.textContent = '光学';
                     return;
                 }
             } catch (e) {
@@ -324,7 +349,7 @@
             try {
                 await track.applyConstraints({ advanced: [{ zoom: z }] });
             } catch (e) {
-                console.warn('ネイティブズーム失敗。デジタルズームに切替:', e);
+                console.warn('ネイティブズーム失敗:', e);
                 nativeZoom = null;
                 zoomMode.textContent = 'デジタル';
                 video.style.transform = `scale(${Math.min(z, MAX_DIGITAL_ZOOM)})`;
@@ -413,7 +438,7 @@
 
                 photoPreview.src = lastBlobUrl;
                 photoInfo.textContent = `${canvas.width}×${canvas.height}px ／ ${(blob.size / 1024 / 1024).toFixed(1)}MB`;
-                previewArea.style.display = 'block';
+                previewArea.style.display = 'flex';
 
                 downloadLink.href = lastBlobUrl;
                 downloadLink.download = `photo_${timestamp()}.jpg`;
@@ -421,6 +446,10 @@
 
             flash.classList.add('on');
             setTimeout(() => flash.classList.remove('on'), 100);
+        }
+
+        function closePreview() {
+            previewArea.style.display = 'none';
         }
 
         function timestamp() {
