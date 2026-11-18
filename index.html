@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>ホイカメラ</title>
+    <title>ホイホイカメラ</title>
     <link rel="apple-touch-icon" href="/voice_shutter_camera/camera.png">
     <style>
         :root {
@@ -96,6 +96,7 @@
         }
         .zoom-buttons {
             display: flex;
+            flex-wrap: wrap;
             gap: 6px;
             justify-content: center;
             padding: 4px 10px 0;
@@ -115,6 +116,16 @@
             border-color: #f5c518;
             color: #000;
             font-weight: bold;
+        }
+        .zoom-buttons button.cam-switch {
+            background: #007acc;
+            border-color: #007acc;
+            color: #fff;
+        }
+        .zoom-buttons button.cam-switch:disabled {
+            background: #444;
+            border-color: #444;
+            color: #888;
         }
         /* 撮影した写真を並べるトレイ（軽量サムネイルのみ表示） */
         .gallery-tray {
@@ -386,7 +397,7 @@
 </head>
 <body>
 
-    <h1>ホイカメラ</h1>
+    <h1>ホイホイカメラ</h1>
 
     <div class="container" id="container">
         <div class="video-wrapper" id="videoWrapper">
@@ -402,6 +413,7 @@
                 <button data-zoom="1" class="on">1×</button>
                 <button data-zoom="2">2×</button>
                 <button data-zoom="3">3×</button>
+                <button id="switchCamBtn" class="cam-switch" type="button">🔄 カメラ切替</button>
             </div>
 
             <!-- 撮影した写真のサムネイル一覧トレイ -->
@@ -413,6 +425,7 @@
                 <div class="status-bar">
                     <div><span id="micIndicator" class="indicator"></span>音声: <span id="micStatus">停止中</span></div>
                     <div>撮影: <span id="photoCount">0</span>/<span id="maxCount">30</span>枚</div>
+                    <div>カメラ: <span id="camMode">-</span></div>
                     <div>ズーム: <span id="zoomMode">-</span></div>
                 </div>
                 <div class="btn-group">
@@ -473,8 +486,10 @@
         const galleryEmpty = document.getElementById('galleryEmpty');
         const photoCount = document.getElementById('photoCount');
         const maxCountEl = document.getElementById('maxCount');
+        const switchCamBtn = document.getElementById('switchCamBtn');
+        const camMode = document.getElementById('camMode');
 
-        const TRIGGER_WORDS = ['ホイ','シャッター', 'チーズ', '撮って', '写真','カシャ','パシャ'];
+        const TRIGGER_WORDS = ['ホイホイ','シャッター', 'チーズ', '撮って', '写真','カシャ','パシャ'];
         const COOLDOWN_MS = 700;       // 連続撮影しやすい短めの間隔
         const MAX_DIGITAL_ZOOM = 4.0;
         const MAX_PHOTOS = 30;         // メモリ保護のための上限枚数
@@ -500,6 +515,12 @@
         let pinchStartZoom = 1.0;
         let nativeApplying = false;
         let nativePending = null;
+
+        // カメラ切替用
+        let wantFacing = 'environment';   // 希望する向き（最初は外カメラ）
+        let currentDeviceId = null;       // 現在使っているカメラのdeviceId
+        let isFrontCam = false;           // 現在インカメラか（プレビュー左右反転に使う）
+        let switching = false;
 
         maxCountEl.textContent = MAX_PHOTOS;
 
@@ -539,27 +560,168 @@
             videoClip.style.aspectRatio = 'auto';
         }
 
-        async function initCamera() {
+        // ---------- カメラ起動・切替 ----------
+
+        const BACK_RE = /back|rear|environment|背面|外|リア/i;
+        const FRONT_RE = /front|user|face|前面|内|フロント/i;
+
+        function stopStream() {
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+                track = null;
+            }
+        }
+
+        function videoConstraints(extra) {
+            return Object.assign({
+                width: { ideal: 3840 },
+                height: { ideal: 2160 }
+            }, extra);
+        }
+
+        // 指定した向きのカメラを開く。facingModeが使えない端末(Surface等)はdeviceIdで探す
+        async function openCamera(facing) {
+            // 1) facingModeで厳密に指定
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: 'environment' },
-                        width: { ideal: 3840 },
-                        height: { ideal: 2160 }
-                    },
+                return await navigator.mediaDevices.getUserMedia({
+                    video: videoConstraints({ facingMode: { exact: facing } }),
                     audio: false
                 });
-                video.srcObject = stream;
-                track = stream.getVideoTracks()[0];
-                detectNativeZoom();
-
-                video.addEventListener('loadedmetadata', fitVideo);
-                video.addEventListener('resize', fitVideo); // 画面回転で映像サイズが変わったとき
-                if (video.readyState >= 1) fitVideo();
-            } catch (err) {
-                alert('カメラへのアクセスが拒否されたか、利用できません。');
-                console.error(err);
+            } catch (e) {
+                console.warn('facingMode(exact)失敗:', e.name);
             }
+
+            // 2) カメラ一覧から名前（ラベル）や別のdeviceIdで探す
+            try {
+                const devices = (await navigator.mediaDevices.enumerateDevices())
+                    .filter(d => d.kind === 'videoinput');
+                const re = facing === 'environment' ? BACK_RE : FRONT_RE;
+                const otherRe = facing === 'environment' ? FRONT_RE : BACK_RE;
+
+                let target = devices.find(d => re.test(d.label));
+                if (!target) {
+                    // ラベルで判別できない場合は「今と別のカメラ」を選ぶ（切替操作のとき）
+                    target = devices.find(d => d.deviceId !== currentDeviceId && !otherRe.test(d.label));
+                }
+                if (target && target.deviceId && target.deviceId !== currentDeviceId) {
+                    return await navigator.mediaDevices.getUserMedia({
+                        video: videoConstraints({ deviceId: { exact: target.deviceId } }),
+                        audio: false
+                    });
+                }
+            } catch (e) {
+                console.warn('deviceId指定失敗:', e.name);
+            }
+
+            // 3) 見つからない場合は希望(ideal)で開く
+            return await navigator.mediaDevices.getUserMedia({
+                video: videoConstraints({ facingMode: { ideal: facing } }),
+                audio: false
+            });
+        }
+
+        async function startCamera(facing) {
+            const newStream = await openCamera(facing);
+            stopStream();
+            stream = newStream;
+            video.srcObject = stream;
+            track = stream.getVideoTracks()[0];
+
+            const settings = track.getSettings ? track.getSettings() : {};
+            currentDeviceId = settings.deviceId || null;
+
+            // 実際にどちらのカメラが開いたかを判定
+            let actual = settings.facingMode;
+            if (!actual) {
+                // facingModeを返さない端末はラベルで判定。不明ならインカメラ扱い（PCのWebカメラ想定）
+                if (BACK_RE.test(track.label)) actual = 'environment';
+                else actual = 'user';
+            }
+            isFrontCam = (actual === 'user');
+            wantFacing = actual;
+            camMode.textContent = isFrontCam ? 'イン' : 'アウト';
+
+            detectNativeZoom();
+            setZoom(1.0);
+            updateVideoTransform();
+            if (video.readyState >= 1) fitVideo();
+            updateSwitchButton();
+        }
+
+        async function initCamera() {
+            video.addEventListener('loadedmetadata', fitVideo);
+            video.addEventListener('resize', fitVideo); // 画面回転・カメラ切替で映像サイズが変わったとき
+            try {
+                await startCamera('environment');
+            } catch (err) {
+                // 外カメラ指定で失敗した場合は、何でもよいのでカメラを開く
+                try {
+                    const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    stopStream();
+                    stream = s;
+                    video.srcObject = stream;
+                    track = stream.getVideoTracks()[0];
+                    const st = track.getSettings ? track.getSettings() : {};
+                    currentDeviceId = st.deviceId || null;
+                    isFrontCam = st.facingMode ? st.facingMode === 'user' : !BACK_RE.test(track.label);
+                    camMode.textContent = isFrontCam ? 'イン' : 'アウト';
+                    detectNativeZoom();
+                    updateVideoTransform();
+                    updateSwitchButton();
+                } catch (err2) {
+                    alert('カメラへのアクセスが拒否されたか、利用できません。');
+                    console.error(err2);
+                }
+            }
+        }
+
+        async function switchCamera() {
+            if (switching) return;
+            switching = true;
+            switchCamBtn.disabled = true;
+            const next = isFrontCam ? 'environment' : 'user';
+            try {
+                await startCamera(next);
+                // 切り替えたのに同じ向きのままなら、カメラが1つしかない
+                if ((next === 'user') !== isFrontCam) {
+                    showToast('切り替え可能なカメラが見つかりません');
+                } else {
+                    showToast(isFrontCam ? 'インカメラに切り替えました' : 'アウトカメラに切り替えました');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('カメラを切り替えられませんでした');
+                // 失敗した場合は元のカメラを開き直す
+                try {
+                    await startCamera(isFrontCam ? 'user' : 'environment');
+                } catch (e2) {
+                    console.error(e2);
+                }
+            }
+            switching = false;
+            switchCamBtn.disabled = false;
+        }
+
+        async function updateSwitchButton() {
+            // カメラが1台しかない場合はボタンを無効化（ラベル取得のため権限取得後に判定）
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const count = devices.filter(d => d.kind === 'videoinput').length;
+                // iPhoneなどfacingModeで切替できる端末は、一覧が1台に見えても切替を許可する
+                const canFacing = !!(navigator.mediaDevices.getSupportedConstraints &&
+                    navigator.mediaDevices.getSupportedConstraints().facingMode);
+                switchCamBtn.disabled = !(count > 1 || canFacing);
+            } catch (e) {
+                switchCamBtn.disabled = false;
+            }
+        }
+
+        // プレビューの表示変換（ズーム＋インカメラ時は左右反転）。保存される写真は反転しない
+        function updateVideoTransform() {
+            const mirror = isFrontCam ? ' scaleX(-1)' : '';
+            const zoom = (!nativeZoom && currentZoom > 1.0) ? `scale(${currentZoom})` : '';
+            video.style.transform = (zoom + mirror).trim() || 'none';
         }
 
         function detectNativeZoom() {
@@ -591,11 +753,10 @@
 
             if (nativeZoom) {
                 applyNativeZoom(z);
-            } else {
-                video.style.transform = `scale(${z})`;
             }
+            updateVideoTransform();
 
-            zoomButtons.querySelectorAll('button').forEach(b => {
+            zoomButtons.querySelectorAll('button[data-zoom]').forEach(b => {
                 b.classList.toggle('on', Math.abs(parseFloat(b.dataset.zoom) - z) < 0.05);
             });
         }
@@ -612,7 +773,8 @@
                 console.warn('ネイティブズーム失敗:', e);
                 nativeZoom = null;
                 zoomMode.textContent = 'デジタル';
-                video.style.transform = `scale(${Math.min(z, MAX_DIGITAL_ZOOM)})`;
+                currentZoom = Math.min(z, MAX_DIGITAL_ZOOM);
+                updateVideoTransform();
             }
             nativeApplying = false;
             if (nativePending !== null && nativeZoom) {
@@ -659,9 +821,11 @@
             }, { passive: false });
 
             zoomButtons.addEventListener('click', (e) => {
-                const btn = e.target.closest('button');
+                const btn = e.target.closest('button[data-zoom]');
                 if (btn) setZoom(parseFloat(btn.dataset.zoom));
             });
+
+            switchCamBtn.addEventListener('click', switchCamera);
 
             videoWrapper.addEventListener('wheel', (e) => {
                 e.preventDefault();
@@ -989,7 +1153,7 @@
 
         window.addEventListener('pagehide', () => {
             stopListening();
-            if (stream) stream.getTracks().forEach(t => t.stop());
+            stopStream();
         });
 
         // 一部のブラウザでページが凍結される場合にも停止
